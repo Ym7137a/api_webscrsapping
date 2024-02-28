@@ -1,0 +1,268 @@
+---
+title: "HW 06: APIs and Web Scraping"
+author: "YASHVI MALVIYA"
+date: "`r Sys.Date()`"
+output: html_document
+urlcolor: "blue"
+params:
+  solutions: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo       = params$solutions, 
+                      eval       = params$solutions,
+                      fig.align  = "center",
+                      fig.height = 3, 
+                      fig.width  = 5)
+```
+
+© 2023 David Gerard, not to be posted online.
+
+# Instructions
+
+- Write your solutions in this starter file. You should modify the 
+  "author" field in the YAML header.
+- Only commit R Markdown and HTML files (no PDF files). Make sure
+  you have knitted to HTML for your final submission.
+- **Make sure to commit each time you answer a question.**
+- Only include the necessary code, not any extraneous code, to answer the 
+  questions.
+- Learning objectives:
+    - Obtain data from an API.
+    - Scrape data from the web.
+
+# Open Brewery Database
+
+Consider the Open Brewery Database API: <https://www.openbrewerydb.org/>
+
+Only use `{httr2}`, not `{httr}`.
+```{r}
+library(rvest)
+library(httr2)
+library(tidyverse)
+library(jsonlite)
+library(request)
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(maps)
+library(rvest)
+library(tidyr) 
+```
+
+1. (1 pt) Get the list of all micro breweries in Ohio (163 of them) where we have longitude and latitude information (124 of them). These should be the microbreweries you obtained:
+
+```{r}
+base_url <- "https://api.openbrewerydb.org/breweries"
+
+params <- list(
+  "by_state" = "Ohio",
+  "per_page" = 163,
+  "page" = 1,
+  "by_type" = "micro"
+)
+
+response <- GET(base_url, query = params)
+
+breweries<- content(response, "parsed", type = "application/json")
+
+names_list <- lapply(breweries, function(brewery) brewery$name)
+
+brewery_names <- tibble(Name = unlist(names_list))
+
+print(brewery_names)
+```
+
+  
+2. (1 pt) Clean up the data from part 1 to get the following data frame:
+
+```{r}
+brewery_df <- as.data.frame(do.call(rbind, breweries))
+
+cleaned_data <- tibble(
+  id = as.character(brewery_df$id),
+  name = as.character(brewery_df$name),
+  address_1 = as.character(brewery_df$address_1),
+  city = as.character(brewery_df$city),
+  state_province = as.character(brewery_df$state_province),
+  postal_code = as.character(brewery_df$postal_code),
+  longitude = as.character(brewery_df$longitude),  
+  latitude = as.character(brewery_df$latitude),   
+  phone = as.character(brewery_df$phone),
+  website_url = as.character(brewery_df$website_url),
+  street = as.character(brewery_df$street)
+)
+
+
+cleaned_data <- cleaned_data %>%
+  filter(latitude != "NULL" & longitude != "NULL")
+
+
+
+cleaned_data$latitude <- as.numeric(cleaned_data$latitude)
+cleaned_data$longitude <- as.numeric(cleaned_data$longitude)
+
+
+x <- cleaned_data%>%
+        as_tibble()
+
+print(x)
+```
+
+
+3. (1 pt) Edit the following ggplot code to obtain the following plot:
+
+    ``` r
+    library(maps)
+    countymap <- map_data("county")
+    
+    countymap |>
+      filter(region == "ohio") |>
+      ggplot(aes(x = long, y = lat, group = subregion)) +
+      geom_polygon(fill = "white", color = "black")
+    ```
+```{r}
+countymap <- map_data("county")
+ohio_map <- countymap %>%
+  filter(region == "ohio")
+
+
+brewery_map <- ggplot() +
+  geom_polygon(data = ohio_map, aes(x = long, y = lat, group = group), fill = "white", color = "black") +
+  geom_point(data = cleaned_data, aes(x = longitude, y = latitude), color = "black", size = 1)
+
+
+brewery_map
+```
+
+# English women artists
+
+Consider the copied Wikipedia page on English women artists: 
+<https://data-science-master.github.io/lectures/data/engart.html>
+
+We'll use the copied version on GitHub rather than the original version
+to make sure solutions are consistent. But the original version can be found
+here (but don't use it): <https://en.wikipedia.org/wiki/List_of_English_women_artists>
+
+Use rvest to answer the following questions.
+
+1. (1 pt) Download the html file and save the output to a variable.
+```{r}
+url <- "https://data-science-master.github.io/lectures/data/engart.html"
+
+html_content <- read_html(url)
+
+```
+
+2. (1 pt) Use SelectorGadget to extract each woman, years of life, and artistic medium. For example, my selections looked like this:
+
+```{r}
+html_elements(x=html_content, css = " ul:nth-child(5) li , ul:nth-child(7) li , ul:nth-child(9) li , ul:nth-child(11) li , ul:nth-child(13) li , ul:nth-child(15) li , ul:nth-child(17) li , ul:nth-child(19) li , ul:nth-child(21) li , ul:nth-child(23) li , ul:nth-child(25) li , ul:nth-child(27) li , ul:nth-child(29) li , ul:nth-child(31) li , ul:nth-child(33) li , ul:nth-child(35) li , ul:nth-child(37) li , ul:nth-child(39) li , ul:nth-child(41) li , ul:nth-child(43) li , ul:nth-child(45) li , ul:nth-child(49) li ")
+```
+
+
+3. (2 pts) Clean the data. 
+
+    Hints:
+
+    1. Not all year ranges are of the form (Birth-Death). You should place
+       NA's in the appropriate locations. No need to extract third-party 
+       datasets to obtain the true values.
+    2. Be careful of parsing numbers like `"c.1888"`.
+    3. Parentheses are used more than just to delimit years.
+    4. Painters, sculptors, illustrators, and printmakers are the most common
+       types of artists, so I included indicators for those mediums. Note
+       that not all printmakers are called "printmakers".
+
+    Your final data frame should look like this:
+```{r}
+css_selector <- "ul:nth-child(5) li , ul:nth-child(7) li , ul:nth-child(9) li , ul:nth-child(11) li , ul:nth-child(13) li , ul:nth-child(15) li , ul:nth-child(17) li , ul:nth-child(19) li , ul:nth-child(21) li , ul:nth-child(23) li , ul:nth-child(25) li , ul:nth-child(27) li , ul:nth-child(29) li , ul:nth-child(31) li , ul:nth-child(33) li , ul:nth-child(35) li , ul:nth-child(37) li , ul:nth-child(39) li , ul:nth-child(41) li , ul:nth-child(43) li , ul:nth-child(45) li , ul:nth-child(49) li"
+
+
+data <- html_content %>%
+  html_elements(css = css_selector) %>%
+  html_text() %>%
+  as.data.frame()
+
+
+colnames(data) <- "raw.data"
+
+data$artist <- sub(" \\(\\d{4}–\\d{4}\\), .*$", "", data$raw.data)
+data$birth <- as.numeric(sub(".*\\((\\d{4})–\\d{4}\\), .*$", "\\1", data$raw.data))
+data$death <- as.numeric(gsub(".*(\\d{4})\\).*", "\\1", data$raw.data))
+
+data$medium <- sub(".*\\), ", "", data$raw.data)
+
+
+data$painter <- str_detect(data$raw.data, fixed("painter"))
+
+data$sculptor <- str_detect(data$raw.data, fixed("sculptor"))
+data$illustrator <- str_detect(data$raw.data, fixed("illustrator"))
+data$printmaker <- str_detect(data$raw.data, fixed("printmaker"))
+
+
+data$artist <- sub(" \\(born \\d{4}\\), ", "", data$artist)
+data$artist <- sub(" \\(\\d{4}–\\d{4}\\), .*$", "", data$artist)
+data$artist <- sub(" \\(born \\d{4}, date of death unknown\\)| \\(c\\.\\d{4}–\\d{4}\\)| \\(fl\\.\\d{4}–\\d{4}\\)", "", data$artist)
+data$artist <- sub(" \\(\\d{4}–\\d{4}\\), .*$", "", data$artist)
+data$artist <- sub(" \\(born \\d{4}[^)]*\\)", "", data$artist)
+data$artist <- sub(",.*", "", data$raw.data)
+data$artist <- sub(" \\(.*?\\)", "", data$artist)
+
+data <- subset(data, select = -raw.data)
+
+data
+```
+
+4. (1 pt) Tabulate the number of painters, sculptors, illustrators, and printmakers. You should get these numbers:
+
+```{r}
+true_count_tibble <- data %>%
+  summarise(
+    painter = sum(painter),
+    sculptor = sum(sculptor),
+    illustrator = sum(illustrator),
+    printmaker = sum(printmaker)
+  ) %>%
+  as_tibble()
+
+print(true_count_tibble)
+
+
+
+```
+
+
+5. (1 pt) Plot the lifespans of printmakers. Your plot should look like this:
+```{r}
+
+printmaker_data <- subset(data, printmaker)
+
+
+printmaker_data$birth[printmaker_data$death == 1947] <- 1947
+printmaker_data$death[printmaker_data$birth == 1947] <- 2000
+printmaker_data$birth[printmaker_data$death == 1973] <- 1947
+
+
+printmaker_data <- transform(printmaker_data, artist = reorder(artist, birth))
+
+
+ggplot(printmaker_data, aes(x = birth, y = artist, color = painter)) +
+  geom_segment(aes(xend = death, yend = artist), size = 2) +
+  scale_color_manual(values = c("FALSE" = "black", "TRUE" = "orange")) +
+  labs(
+    x = "Birth/Death",
+    y = "Artist",
+    title = "Lifespans of Printmakers",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  guides(color = guide_legend(override.aes = list(size = 3))
+  ) +
+  scale_y_discrete(limits = printmaker_data$artist)
+```
+
+References:
+
+1. https://data-science-master.github.io/lectures/05_web_scraping/05_web_scraping.html
+2. https://chat.openai.com/c/5446217f-88f8-4fe7-9a06-e07324eeb890
